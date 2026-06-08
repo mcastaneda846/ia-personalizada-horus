@@ -3,6 +3,7 @@ import { redisClient } from "./redis.service";
 import { qdrantService } from "./qdrant.service";
 import { geminiService } from "./gemini.service";
 import { databaseService } from "./database.service";
+
 import { buildSystemPrompt } from "../prompts/system.prompt";
 import {
   ChatSession,
@@ -215,7 +216,7 @@ async syncUserProfile(userId: string): Promise<boolean> {
   console.log("STEP 4 - Generando embedding");
 
   // Vectorizar el texto del perfil
-const vector = new Array(768).fill(0);
+  const vector = await geminiService.generateEmbedding(profileText);
 
   console.log("STEP 5 - Embedding generado", vector.length);
 

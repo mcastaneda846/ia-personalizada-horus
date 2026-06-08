@@ -99,7 +99,8 @@ class GeminiService {
       model: env.GEMINI_MODEL || "gemini-2.0-flash",
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 512,
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json",
       },
     });
 
@@ -110,13 +111,16 @@ class GeminiService {
 
     const responseText = result.response.text().trim();
 
-    const cleanJson = responseText
-      .replace(/```json\n?/g, "")
-      .replace(/```\n?/g, "")
-      .trim();
+    let jsonString = responseText;
+    const startIndex = responseText.indexOf("{");
+    const endIndex = responseText.lastIndexOf("}");
+
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      jsonString = responseText.substring(startIndex, endIndex + 1);
+    }
 
     try {
-      return JSON.parse(cleanJson);
+      return JSON.parse(jsonString);
     } catch (err) {
       console.error("❌ JSON parse failed, returning fallback");
       return {

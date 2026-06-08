@@ -36,6 +36,11 @@ const envSchema = z.object({
 
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(30),
+
+  // Firebase
+  FIREBASE_PROJECT_ID: z.string().min(1, "FIREBASE_PROJECT_ID requerido"),
+  FIREBASE_CLIENT_EMAIL: z.string().email("FIREBASE_CLIENT_EMAIL inválido"),
+  FIREBASE_PRIVATE_KEY: z.string().min(1, "FIREBASE_PRIVATE_KEY requerido"),
 });
 
 const parsed = envSchema.safeParse(process.env);

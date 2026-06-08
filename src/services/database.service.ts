@@ -1,6 +1,18 @@
 import { Pool, PoolClient } from "pg";
+import * as admin from "firebase-admin";
 import { env } from "../config/env";
 import { MedicalProfile, ChatLog } from "../models/types";
+
+// 🔴 CAMBIO MÍNIMO: inicializar Firebase UNA sola vez
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: env.FIREBASE_PROJECT_ID,
+      clientEmail: env.FIREBASE_CLIENT_EMAIL,
+      privateKey: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    }),
+  });
+}
 
 class DatabaseService {
   private pool: Pool;
@@ -182,27 +194,21 @@ class DatabaseService {
 
   async saveChatLog(log: ChatLog): Promise<void> {
     try {
-      await this.pool.query(
-        `INSERT INTO chat_logs (
-           user_id, session_id, started_at, ended_at, summary,
-           main_topics, alert_level, emergency_services_recommended,
-           key_recommendations, requires_follow_up, follow_up_reason, message_count
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [
-          log.userId,
-          log.sessionId,
-          log.startedAt,
-          log.endedAt,
-          log.summary,
-          JSON.stringify(log.mainTopics ?? []),
-          log.alertLevel,
-          log.emergencyServicesRecommended,
-          JSON.stringify(log.keyRecommendations ?? []),
-          log.requiresFollowUp,
-          log.followUpReason,
-          log.messageCount,
-        ]
-      );
+      const db = admin.firestore();
+      await db.collection("chat_logs").doc(log.sessionId).set({
+        user_id: log.userId,
+        session_id: log.sessionId,
+        started_at: log.startedAt,
+        ended_at: log.endedAt,
+        summary: log.summary,
+        main_topics: log.mainTopics ?? [],
+        alert_level: log.alertLevel,
+        emergency_services_recommended: log.emergencyServicesRecommended,
+        key_recommendations: log.keyRecommendations ?? [],
+        requires_follow_up: log.requiresFollowUp,
+        follow_up_reason: log.followUpReason,
+        message_count: log.messageCount,
+      });
     } catch (err) {
       console.error("❌ Error guardando chat log:", err);
       throw err;
