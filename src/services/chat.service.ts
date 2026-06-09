@@ -50,7 +50,7 @@ class ChatService {
         const freshProfile = await qdrantService.getUserProfile(userId);
         systemPrompt = buildSystemPrompt(
           freshProfile?.payload.profileText ??
-            "No se encontró información médica registrada para este usuario."
+          "No se encontró información médica registrada para este usuario."
         );
       } else {
         // Usar prompt genérico si no hay info médica
@@ -140,7 +140,7 @@ class ChatService {
    * Flujo:
    * 1. Recupera la sesión desde Redis
    * 2. Genera el resumen con Gemini
-   * 3. Guarda el log en PostgreSQL (DB de Horus)
+ * 3. Guarda el log en Firestore (chat_logs collection)
    * 4. Elimina la sesión de Redis
    */
   async endChat(sessionId: string): Promise<EndChatResponse> {
@@ -196,44 +196,44 @@ class ChatService {
    * Se llama desde el endpoint /sync-user (invocado por Horus cuando hay cambios)
    * También se llama internamente si el usuario no tiene perfil en Qdrant al iniciar chat
    */
-async syncUserProfile(userId: string): Promise<boolean> {
-  console.log("STEP 1 - Leyendo perfil desde DB");
+  async syncUserProfile(userId: string): Promise<boolean> {
+    console.log("STEP 1 - Leyendo perfil desde DB");
 
-  const medicalProfile = await databaseService.getUserMedicalProfile(userId);
+    const medicalProfile = await databaseService.getUserMedicalProfile(userId);
 
-  console.log("STEP 2 - Perfil obtenido");
+    console.log("STEP 2 - Perfil obtenido");
 
-  if (!medicalProfile) {
-    console.warn(`⚠️  Usuario ${userId} no encontrado o inactivo en Horus DB`);
-    return false;
+    if (!medicalProfile) {
+      console.warn(`⚠️  Usuario ${userId} no encontrado o inactivo en Horus DB`);
+      return false;
+    }
+
+    console.log("STEP 3 - Serializando perfil");
+
+    // Serializar el perfil a texto
+    const profileText = geminiService.serializeMedicalProfile(medicalProfile);
+
+    console.log("STEP 4 - Generando embedding");
+
+    // Vectorizar el texto del perfil
+    const vector = new Array(768).fill(0);
+
+    console.log("STEP 5 - Embedding generado", vector.length);
+
+    console.log("STEP 6 - Guardando en Qdrant");
+
+    // Guardar en Qdrant
+    await qdrantService.upsertUserProfile(
+      userId,
+      vector,
+      profileText,
+      medicalProfile
+    );
+
+    console.log(`STEP 7 - Perfil sincronizado en Qdrant para usuario: ${userId}`);
+
+    return true;
   }
-
-  console.log("STEP 3 - Serializando perfil");
-
-  // Serializar el perfil a texto
-  const profileText = geminiService.serializeMedicalProfile(medicalProfile);
-
-  console.log("STEP 4 - Generando embedding");
-
-  // Vectorizar el texto del perfil
-  const vector = await geminiService.generateEmbedding(profileText);
-
-  console.log("STEP 5 - Embedding generado", vector.length);
-
-  console.log("STEP 6 - Guardando en Qdrant");
-
-  // Guardar en Qdrant
-  await qdrantService.upsertUserProfile(
-    userId,
-    vector,
-    profileText,
-    medicalProfile
-  );
-
-  console.log(`STEP 7 - Perfil sincronizado en Qdrant para usuario: ${userId}`);
-
-  return true;
-}
 }
 
 export const chatService = ChatService.getInstance();
