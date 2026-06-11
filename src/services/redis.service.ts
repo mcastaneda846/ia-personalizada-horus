@@ -1,5 +1,6 @@
 import Redis from "ioredis";
 import { env } from "../config/env";
+import logger from "../config/logger";
 import { ChatSession } from "../models/types";
 
 class RedisClient {
@@ -7,17 +8,22 @@ class RedisClient {
   private static instance: RedisClient;
 
   private constructor() {
+    const isTLS =
+      env.REDIS_URL.startsWith("rediss://") ||
+      env.REDIS_URL.includes("upstash.io");
+
     this.client = new Redis(env.REDIS_URL, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
+      ...(isTLS && { tls: { rejectUnauthorized: false } }),
     });
 
     this.client.on("error", (err) => {
-      console.error("❌ Redis error:", err.message);
+      logger.error({ err: err.message }, "Redis error");
     });
 
     this.client.on("connect", () => {
-      console.log("✅ Redis conectado");
+      logger.info("Redis connected");
     });
   }
 
@@ -32,24 +38,21 @@ class RedisClient {
     await this.client.connect();
   }
 
-  // ─── Sesiones ────────────────────────────────────────────────────────────────
+  // Sesiones
 
   async saveSession(session: ChatSession): Promise<void> {
-    const key = this.sessionKey(session.sessionId);
     await this.client.setex(
-      key,
+      this.sessionKey(session.sessionId),
       env.SESSION_TTL_SECONDS,
       JSON.stringify(session)
     );
   }
 
   async getSession(sessionId: string): Promise<ChatSession | null> {
-    const key = this.sessionKey(sessionId);
-    const data = await this.client.get(key);
+    const data = await this.client.get(this.sessionKey(sessionId));
     if (!data) return null;
 
     const session = JSON.parse(data) as ChatSession;
-    // Restaurar fechas desde JSON
     session.createdAt = new Date(session.createdAt);
     session.lastActivityAt = new Date(session.lastActivityAt);
     session.history = session.history.map((msg) => ({
@@ -70,11 +73,8 @@ class RedisClient {
   }
 
   async sessionExists(sessionId: string): Promise<boolean> {
-    const result = await this.client.exists(this.sessionKey(sessionId));
-    return result === 1;
+    return (await this.client.exists(this.sessionKey(sessionId))) === 1;
   }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────────
 
   private sessionKey(sessionId: string): string {
     return `horus:session:${sessionId}`;
@@ -82,8 +82,7 @@ class RedisClient {
 
   async ping(): Promise<boolean> {
     try {
-      const result = await this.client.ping();
-      return result === "PONG";
+      return (await this.client.ping()) === "PONG";
     } catch {
       return false;
     }

@@ -1,17 +1,14 @@
+import path from "path";
 import { Pool, PoolClient } from "pg";
 import * as admin from "firebase-admin";
 import { env } from "../config/env";
+import logger from "../config/logger";
 import { MedicalProfile, ChatLog } from "../models/types";
 
-// 🔴 CAMBIO MÍNIMO: inicializar Firebase UNA sola vez
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: env.FIREBASE_PROJECT_ID,
-      clientEmail: env.FIREBASE_CLIENT_EMAIL,
-      privateKey: env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-    }),
-  });
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const serviceAccount = require(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_PATH));
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 
 class DatabaseService {
@@ -27,7 +24,7 @@ class DatabaseService {
     });
 
     this.pool.on("error", (err) => {
-      console.error("❌ PostgreSQL pool error:", err.message);
+      logger.error({ err: err.message }, "PostgreSQL pool error");
     });
   }
 
@@ -38,27 +35,25 @@ class DatabaseService {
     return DatabaseService.instance;
   }
 
-  // ───────────────────────────────
-  // PERFIL MÉDICO
-  // ───────────────────────────────
-
   async getUserMedicalProfile(userId: string): Promise<MedicalProfile | null> {
     const client = await this.pool.connect();
-
     try {
-      const userResult = await client.query(
+      const user = await client.query(
         `SELECT id FROM users WHERE id = $1 AND account_status = 'ACTIVE' LIMIT 1`,
         [userId]
       );
+      if (user.rows.length === 0) return null;
 
-      if (userResult.rows.length === 0) return null;
-
-      const personalInfo = await this.fetchPersonalInfo(client, userId);
-      const medicalProfile = await this.fetchMedicalProfile(client, userId);
-      const allergies = await this.fetchAllergies(client, userId);
-      const chronicConditions = await this.fetchChronicConditions(client, userId);
-      const medications = await this.fetchMedications(client, userId);
-      const emergencyContacts = await this.fetchEmergencyContacts(client, userId);
+      const [personalInfo, medicalProfile, allergies, chronicConditions, medications, emergencyContacts, medicalHistory] =
+        await Promise.all([
+          this.fetchPersonalInfo(client, userId),
+          this.fetchMedicalProfile(client, userId),
+          this.fetchAllergies(client, userId),
+          this.fetchChronicConditions(client, userId),
+          this.fetchMedications(client, userId),
+          this.fetchEmergencyContacts(client, userId),
+          this.fetchMedicalHistory(client, userId),
+        ]);
 
       return {
         userId,
@@ -68,6 +63,7 @@ class DatabaseService {
         chronicConditions,
         currentMedications: medications,
         emergencyContacts,
+        medicalHistory,
       };
     } finally {
       client.release();
@@ -80,17 +76,12 @@ class DatabaseService {
        FROM personal_information WHERE user_id = $1 LIMIT 1`,
       [userId]
     );
-
     if (result.rows.length === 0) return null;
-
     const row = result.rows[0];
-
     return {
       firstName: row.first_name,
       lastName: row.last_name,
-      dateOfBirth: row.date_of_birth
-        ? new Date(row.date_of_birth).toISOString()
-        : null,
+      dateOfBirth: row.date_of_birth ? new Date(row.date_of_birth).toISOString() : null,
       gender: row.gender,
       bloodType: row.blood_type,
     };
@@ -102,11 +93,8 @@ class DatabaseService {
        FROM medical_profile WHERE user_id = $1 LIMIT 1`,
       [userId]
     );
-
     if (result.rows.length === 0) return null;
-
     const row = result.rows[0];
-
     return {
       heightCm: row.height_cm ? Number(row.height_cm) : null,
       weightKg: row.weight_kg ? Number(row.weight_kg) : null,
@@ -122,7 +110,6 @@ class DatabaseService {
        FROM allergies WHERE user_id = $1 ORDER BY severity DESC`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       allergenName: row.allergen_name,
       allergyType: row.allergy_type,
@@ -140,7 +127,6 @@ class DatabaseService {
        ORDER BY severity DESC NULLS LAST`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       conditionName: row.condition_name,
       severity: row.severity,
@@ -159,7 +145,6 @@ class DatabaseService {
        WHERE um.user_id = $1 AND um.is_current = true`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       name: row.name,
       dosage: row.dosage,
@@ -178,7 +163,6 @@ class DatabaseService {
        ORDER BY priority_order ASC`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       fullName: row.full_name,
       relationship: row.relationship,
@@ -188,31 +172,39 @@ class DatabaseService {
     }));
   }
 
-  // ───────────────────────────────
-  // CHAT LOGS
-  // ───────────────────────────────
+  private async fetchMedicalHistory(client: PoolClient, userId: string) {
+    const result = await client.query(
+      `SELECT event_type, event_name, event_date, outcome
+       FROM medical_history
+       WHERE user_id = $1
+       ORDER BY event_date DESC NULLS LAST
+       LIMIT 10`,
+      [userId]
+    );
+    return result.rows.map((row) => ({
+      eventType: row.event_type,
+      eventName: row.event_name,
+      eventDate: row.event_date ? new Date(row.event_date).toISOString() : null,
+      outcome: row.outcome,
+    }));
+  }
 
   async saveChatLog(log: ChatLog): Promise<void> {
-    try {
-      const db = admin.firestore();
-      await db.collection("chat_logs").doc(log.sessionId).set({
-        user_id: log.userId,
-        session_id: log.sessionId,
-        started_at: log.startedAt,
-        ended_at: log.endedAt,
-        summary: log.summary,
-        main_topics: log.mainTopics ?? [],
-        alert_level: log.alertLevel,
-        emergency_services_recommended: log.emergencyServicesRecommended,
-        key_recommendations: log.keyRecommendations ?? [],
-        requires_follow_up: log.requiresFollowUp,
-        follow_up_reason: log.followUpReason,
-        message_count: log.messageCount,
-      });
-    } catch (err) {
-      console.error("❌ Error guardando chat log:", err);
-      throw err;
-    }
+    const db = admin.firestore();
+    await db.collection("chat_logs").doc(log.sessionId).set({
+      user_id: log.userId,
+      session_id: log.sessionId,
+      started_at: log.startedAt,
+      ended_at: log.endedAt,
+      summary: log.summary,
+      main_topics: log.mainTopics ?? [],
+      alert_level: log.alertLevel,
+      emergency_services_recommended: log.emergencyServicesRecommended,
+      key_recommendations: log.keyRecommendations ?? [],
+      requires_follow_up: log.requiresFollowUp,
+      follow_up_reason: log.followUpReason,
+      message_count: log.messageCount,
+    });
   }
 
   async ping(): Promise<boolean> {

@@ -19,8 +19,6 @@ export function validateBody<T>(schema: ZodSchema<T>) {
   };
 }
 
-// ─── Schemas de validación ────────────────────────────────────────────────────
-
 export const initChatSchema = z.object({
   userId: z.string().uuid("userId debe ser un UUID válido"),
 });
