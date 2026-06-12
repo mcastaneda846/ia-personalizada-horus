@@ -235,33 +235,26 @@ o midazolam intranasal) y convulsiona más de 5 min, aplicar según indicación 
   {
     category: "alergias_anafilaxia",
     source: "Cruz Roja / EAACI",
-    content: `REACCIÓN ALÉRGICA Y ANAFILAXIA:
+    content: `ANAFILAXIA — EMERGENCIA GRAVE:
+CRITICO: los antihistaminicos solos NO tratan la anafilaxia — son demasiado lentos y no revierten el cierre de via aerea. La unica medicacion efectiva es la epinefrina (adrenalina).
 
-LEVE (picazón localizada, urticaria en zona pequeña, estornudos):
-• Antihistamínico oral si no hay contraindicaciones
-• Retirar el alérgeno si se identifica
-• Observar durante 1-2 horas
+SEÑALES: hinchazón de cara, labios, lengua o garganta, dificultad para respirar, sibilancias, urticaria generalizada combinada con sintomas respiratorios o cardiovasculares, caida de presion arterial, perdida de conciencia.
 
-MODERADA (urticaria extensa, náuseas, vómito, dolor abdominal):
-• Antihistamínico
-• Si el médico ha prescrito corticoide oral: tomarlo
-• Ir a urgencias si no mejora en 30 minutos
+ACCION INMEDIATA:
+1. Llamar al 123 de inmediato — poner en altavoz si esta solo
+2. Si tiene autoinyector de epinefrina (EpiPen): inyectar en musculo externo del muslo (puede ser sobre la ropa), mantener 10 segundos. Este es el paso mas importante.
+3. Acostar con piernas elevadas — NO sentado ni de pie (riesgo de muerte subita por caida de presion)
+4. Segunda dosis de epinefrina a los 5-15 minutos si no mejora
+5. Si pierde la conciencia y no respira: RCP
 
-ANAFILAXIA — EMERGENCIA GRAVE (los síntomas aparecen en minutos):
-Señales: hinchazón de cara/garganta, dificultad para respirar, sibilancias,
-caída de presión arterial, pérdida de conciencia, urticaria extensa simultánea
-con síntomas respiratorios o cardiovasculares.
+REACCION ALERGICA LEVE (picazon localizada, urticaria pequeña, sin sintomas sistemicos):
+• Retirar el alergeno
+• Antihistaminico oral si no hay contraindicaciones
+• Observar 1-2 horas — si aparece hinchazón en cara o garganta: escalar a CRITICO
 
-ACCIÓN INMEDIATA:
-1. Llamar a emergencias (123/112/911)
-2. Si tiene autoinyector de epinefrina (EpiPen): inyectar en músculo externo del muslo
-   (puede aplicarse sobre la ropa), mantener 10 segundos
-3. Acostar al paciente con piernas elevadas (NO sentado ni de pie — riesgo de muerte súbita)
-4. Si pierde la conciencia y no respira: RCP
-5. Una segunda dosis de epinefrina puede aplicarse a los 5-15 minutos si no mejora
-
-IMPORTANTE: la epinefrina es la única medicación efectiva en anafilaxia.
-Los antihistamínicos solos NO tratan la anafilaxia — son muy lentos de acción.`,
+REACCION MODERADA (urticaria extensa, nauseas, sin compromiso respiratorio):
+• Antihistaminico + corticoide oral si fue prescrito
+• Ir a urgencias si no mejora en 30 minutos`,
   },
 
   {
@@ -828,6 +821,86 @@ SEÑALES DE ALERTA HORAS DESPUÉS DEL RESCATE:
 • Pecho apretado, fatiga inusual
 • Confusión, cambios de comportamiento
 → IR A URGENCIAS INMEDIATAMENTE`,
+  },
+
+  {
+    category: "emergencias_neurologicas",
+    source: "AHA / ESO",
+    content: `ACV — QUE HACER MIENTRAS LLEGA LA AMBULANCIA:
+El tiempo es cerebro: cada minuto sin tratamiento se pierden ~2 millones de neuronas.
+
+LO QUE DEBES HACER:
+1. Llamar al 123 de inmediato y NO colgar — sigue sus instrucciones
+2. Anotar la hora exacta en que comenzaron los sintomas (el medico lo necesita para decidir el tratamiento)
+3. Mantener a la persona tranquila y en posicion comoda — cabeza y hombros ligeramente elevados
+4. Aflojar ropa ajustada en cuello y cintura
+5. No dar nada por la boca — puede haber dificultad para tragar y puede ahogarse
+6. No administrar aspirina — algunos ACV son hemorragicos y la aspirina empeora el sangrado
+7. Si pierde la conciencia pero respira: posicion lateral de recuperacion
+8. Si no respira: RCP
+
+NO HACER:
+- No dejar sola a la persona en ningun momento
+- No darle agua, medicamentos ni alimentos
+- No esperar a ver si mejora — cada minuto cuenta
+
+PROTOCOLO FAST de confirmacion rapida:
+F — Face (Cara): pedir que sonria. Un lado cae? Asimetria?
+A — Arms (Brazos): levantar ambos brazos. Uno cae o no puede?
+S — Speech (Habla): repetir una frase. Confuso, arrastra palabras?
+T — Time: si cualquiera de los anteriores, llama al 123 YA`,
+  },
+
+  {
+    category: "condiciones_cronicas",
+    source: "ACR / EULAR / Arthritis Foundation",
+    content: `ARTRITIS REUMATOIDE — VIVIR CON LA CONDICION:
+La artritis reumatoide (AR) es una enfermedad autoinmune: el sistema inmune ataca por error las articulaciones. No es causada por desgaste ni por edad — puede aparecer a cualquier edad, incluso en jovenes.
+
+CON TRATAMIENTO ADECUADO:
+La mayoria de personas con AR llevan vidas activas y plenas. Los tratamientos modernos (DMARDs biologicos y sinteticos) pueden lograr remision o baja actividad de la enfermedad en muchos pacientes.
+
+MANEJO DEL BROTE (dolor e inflamacion aguda):
+• Reposo relativo de la articulacion afectada — no inmovilizacion total
+• Calor seco (para rigidez matutina) o frio (para inflamacion aguda)
+• Ejercicio en agua o fisioterapia — mantiene la movilidad sin dañar las articulaciones
+• EVITAR en AR: ibuprofeno, naproxeno y AINEs si hay alergia o contraindicacion — consultar al reumatólogo las alternativas seguras
+• El paracetamol es generalmente seguro para el dolor pero no controla la inflamacion
+
+SEÑALES DE QUE DEBES CONSULTAR AL REUMATÓLOGO PRONTO:
+• Brote con mas de 6 articulaciones inflamadas
+• Fiebre asociada al brote
+• Dolor que no cede con el tratamiento habitual
+• Rigidez matutina que dura mas de 1 hora`,
+  },
+
+  {
+    category: "hematologia",
+    source: "OMS / Guias de Anemia",
+    content: `ANEMIA FERROPENICA — ENTENDER Y MANEJAR:
+La anemia ferropenica ocurre cuando el cuerpo no tiene suficiente hierro para producir hemoglobina — la proteina que transporta oxigeno en los globulos rojos. Es como tener muy pocos camiones de reparto de oxigeno en el cuerpo.
+
+SINTOMAS TIPICOS:
+• Cansancio y fatiga constante aunque duermas bien
+• Mareos al levantarte rapido (hipotension ortostatica — la sangre tarda en llegar al cerebro)
+• Pallidez, piel y mucosas poco rosadas
+• Palpitaciones o falta de aire al esfuerzo
+• Dificultad para concentrarse
+
+MANEJO DEL MAREO AL LEVANTARSE:
+• Levantate en dos tiempos: primero siéntate al borde de la cama, espera 30 segundos, luego parate
+• Mantente hidratado — la deshidratacion empeora la hipotension ortostatica
+
+ALIMENTOS RICOS EN HIERRO:
+• Hierro heminico (mejor absorbido): carnes rojas, higado, pollo, pescado
+• Hierro no heminico: legumbres, espinaca, brocoli, quinoa
+• Vitamina C potencia la absorcion: tomar con jugo de naranja o tomate
+• EVITAR con el hierro: cafe, te, lacteos — reducen la absorcion
+
+CUANDO CONSULTAR:
+• Si los sintomas son nuevos o empeoran a pesar del tratamiento
+• Si hay sangrado anormal (menstrual, digestivo)
+• Si hay palpitaciones frecuentes o falta de aire en reposo`,
   },
 ];
 
