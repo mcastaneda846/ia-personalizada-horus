@@ -54,7 +54,7 @@ class OpenAIService {
       model: env.OPENAI_MODEL,
       messages,
       temperature: 0.3,
-      max_tokens: 700,
+      max_tokens: 1000,
     });
 
     return response.choices[0].message.content ?? "";
