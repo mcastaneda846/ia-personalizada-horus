@@ -189,6 +189,28 @@ class DatabaseService {
     }));
   }
 
+  async getTodayHealthReadings(userId: string): Promise<{
+    heartRate?: number; steps?: number; calories?: number;
+    activityMinutes?: number; battery?: number; timestamp?: string;
+  } | null> {
+    try {
+      const db = admin.firestore();
+      const doc = await db.collection('health_readings').doc(userId).get();
+      if (!doc.exists) return null;
+      const d = doc.data()!;
+      return {
+        heartRate:       d.heartRate       ?? undefined,
+        steps:           d.steps           ?? undefined,
+        calories:        d.calories        ?? undefined,
+        activityMinutes: d.activityMinutes ?? undefined,
+        battery:         d.battery         ?? undefined,
+        timestamp:       d.timestamp       ?? undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async saveChatLog(log: ChatLog): Promise<void> {
     const db = admin.firestore();
     await db.collection("chat_logs").doc(log.sessionId).set({
@@ -204,6 +226,22 @@ class DatabaseService {
       requires_follow_up: log.requiresFollowUp,
       follow_up_reason: log.followUpReason,
       message_count: log.messageCount,
+    });
+  }
+
+  async getChatHistory(userId: string, limit = 30): Promise<object[]> {
+    const db = admin.firestore();
+    const snap = await db
+      .collection("chat_logs")
+      .where("user_id", "==", userId)
+      .limit(limit)
+      .get();
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Record<string, unknown>));
+    // Ordenar en memoria por started_at desc (evita índice compuesto en Firestore)
+    return docs.sort((a, b) => {
+      const aTs = (a.started_at as { _seconds?: number })?._seconds ?? 0;
+      const bTs = (b.started_at as { _seconds?: number })?._seconds ?? 0;
+      return bTs - aTs;
     });
   }
 

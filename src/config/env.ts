@@ -20,6 +20,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
   API_SECRET_KEY: z.string().min(16, "API_SECRET_KEY debe tener al menos 16 caracteres"),
+  ELEVENLABS_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(30),
 });

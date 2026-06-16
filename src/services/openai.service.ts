@@ -1,7 +1,8 @@
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import { env } from "../config/env";
 import { ChatMessage, MedicalProfile } from "../models/types";
 import { SESSION_SUMMARY_PROMPT } from "../prompts/system.prompt";
+import logger from "../config/logger";
 
 const HISTORY_WINDOW = 12;
 
@@ -10,6 +11,18 @@ class OpenAIService {
 
   constructor() {
     this.client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+  }
+
+  async speechToText(audioBase64: string, mimeType: string): Promise<string> {
+    const buffer = Buffer.from(audioBase64, "base64");
+    const ext = mimeType.includes("mp4") || mimeType.includes("m4a") ? "m4a" : "mp3";
+    const file = await toFile(buffer, `audio.${ext}`, { type: mimeType });
+    const response = await this.client.audio.transcriptions.create({
+      model: "whisper-1",
+      file,
+      language: "es",
+    });
+    return response.text;
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
@@ -25,7 +38,9 @@ class OpenAIService {
     history: ChatMessage[],
     userMessage: string,
     ragContext?: string,
-    contextNote?: string
+    contextNote?: string,
+    mediaBase64?: string,
+    mediaType?: string,
   ): Promise<string> {
     const recentHistory = history.slice(-HISTORY_WINDOW);
 
@@ -38,17 +53,60 @@ class OpenAIService {
     ];
 
     if (ragContext) {
-      messages.push({
-        role: "system",
-        content: `PROTOCOLOS RELEVANTES:\n${ragContext}`,
-      });
+      messages.push({ role: "system", content: `PROTOCOLOS RELEVANTES:\n${ragContext}` });
     }
-
     if (contextNote) {
       messages.push({ role: "system", content: contextNote });
     }
 
-    messages.push({ role: "user", content: userMessage });
+    if (mediaBase64 && mediaType) {
+      if (mediaType.startsWith("image/")) {
+        messages.push({
+          role: "user",
+          content: [
+            { type: "text", text: userMessage || "Analiza esta imagen médica y orientame según mi perfil." },
+            // detail:"low" = 85 tokens fijos (~$0.00013) vs "high" que puede superar 1500 tokens
+            { type: "image_url", image_url: { url: `data:${mediaType};base64,${mediaBase64}`, detail: "low" } },
+          ],
+        });
+      } else if (mediaType === "application/pdf") {
+        try {
+          const pdfText = await this.extractPdfText(mediaBase64);
+          if (pdfText.length > 80) {
+            messages.push({ role: "system", content: `DOCUMENTO PDF ADJUNTO POR EL USUARIO:\n${pdfText}` });
+            messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+          } else {
+            // PDF escaneado — renderizar página 1 como imagen y usar visión (85 tokens, ~$0.00001)
+            logger.info("Scanned PDF detected, rendering page 1 for vision OCR");
+            const jpegBase64 = await this.renderPdfPageAsImage(mediaBase64);
+            messages.push({
+              role: "user",
+              content: [
+                { type: "text", text: userMessage || "Analiza este documento médico escaneado." },
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${jpegBase64}`, detail: "low" } },
+              ],
+            });
+          }
+        } catch (err) {
+          logger.warn({ err }, "PDF processing failed");
+          messages.push({ role: "system", content: "El usuario adjuntó un PDF pero no fue posible procesarlo. Pídele que tome una foto del documento." });
+          messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+        }
+      } else if (mediaType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        try {
+          const docxText = await this.extractDocxText(mediaBase64);
+          messages.push({ role: "system", content: `DOCUMENTO WORD ADJUNTO POR EL USUARIO:\n${docxText}` });
+        } catch (err) {
+          logger.warn({ err }, "DOCX extraction failed");
+          messages.push({ role: "system", content: "El usuario adjuntó un Word pero no fue posible leerlo. Pídele que describa el contenido." });
+        }
+        messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+      } else {
+        messages.push({ role: "user", content: userMessage });
+      }
+    } else {
+      messages.push({ role: "user", content: userMessage });
+    }
 
     const response = await this.client.chat.completions.create({
       model: env.OPENAI_MODEL,
@@ -58,6 +116,57 @@ class OpenAIService {
     });
 
     return response.choices[0].message.content ?? "";
+  }
+
+  private async extractPdfText(base64: string): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+    const buffer = Buffer.from(base64, "base64");
+    const data = await pdfParse(buffer);
+    return data.text.trim().slice(0, 5000);
+  }
+
+  private async renderPdfPageAsImage(base64: string): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const napi = require("@napi-rs/canvas") as { createCanvas: (w: number, h: number) => any; DOMMatrix: any; Path2D: any };
+
+    // Polyfill globals que pdfjs-dist necesita antes de cargarlo
+    if (!globalThis.DOMMatrix) (globalThis as any).DOMMatrix = napi.DOMMatrix;
+    if (!globalThis.Path2D)   (globalThis as any).Path2D   = napi.Path2D;
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js") as any;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
+
+    // Factory para que pdfjs use @napi-rs/canvas en lugar de node-canvas
+    const canvasFactory = {
+      create: (w: number, h: number) => {
+        const canvas = napi.createCanvas(w, h);
+        return { canvas, context: canvas.getContext("2d") };
+      },
+      reset: (obj: any, w: number, h: number) => { obj.canvas.width = w; obj.canvas.height = h; },
+      destroy: (obj: any) => { obj.canvas.width = 0; obj.canvas.height = 0; },
+    };
+
+    const buffer = Buffer.from(base64, "base64");
+    const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer), canvasFactory }).promise;
+    const page   = await pdfDoc.getPage(1);
+
+    const viewport  = page.getViewport({ scale: 1.5 });
+    const obj       = canvasFactory.create(Math.ceil(viewport.width), Math.ceil(viewport.height));
+
+    await page.render({ canvasContext: obj.context, viewport, canvasFactory }).promise;
+
+    const jpegBuffer: Buffer = obj.canvas.toBuffer("image/jpeg", { quality: 0.85 });
+    return jpegBuffer.toString("base64");
+  }
+
+  private async extractDocxText(base64: string): Promise<string> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mammoth = require("mammoth") as { extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }> };
+    const buffer = Buffer.from(base64, "base64");
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value.slice(0, 5000);
   }
 
   async generateSessionSummary(messages: ChatMessage[]): Promise<{

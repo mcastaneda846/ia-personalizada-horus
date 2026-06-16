@@ -26,7 +26,10 @@ class ChatService {
   }
 
   async initChat(userId: string): Promise<InitChatResponse> {
-    const medicalProfile = await databaseService.getUserMedicalProfile(userId);
+    const [medicalProfile, healthReadings] = await Promise.all([
+      databaseService.getUserMedicalProfile(userId),
+      databaseService.getTodayHealthReadings(userId),
+    ]);
 
     let userMedicalContext: string;
 
@@ -45,6 +48,19 @@ class ChatService {
       userMedicalContext =
         "Este usuario no tiene informacion medica registrada. " +
         "Responde de forma general sin hacer suposiciones sobre su estado de salud.";
+    }
+
+    // Inject today's watch readings so health reports use real data
+    if (healthReadings) {
+      const parts: string[] = [];
+      if (healthReadings.heartRate != null)       parts.push(`FC: ${healthReadings.heartRate} bpm`);
+      if (healthReadings.steps != null)           parts.push(`Pasos: ${healthReadings.steps}`);
+      if (healthReadings.calories != null)        parts.push(`Calorías: ${healthReadings.calories} kcal`);
+      if (healthReadings.activityMinutes != null) parts.push(`Minutos activos: ${healthReadings.activityMinutes}`);
+      if (healthReadings.battery != null)         parts.push(`Batería reloj: ${healthReadings.battery}%`);
+      if (parts.length > 0) {
+        userMedicalContext += `\n\nDATOS DEL RELOJ HOY (datos reales del smartwatch — úsalos al evaluar el estado de salud del día):\n${parts.join(' | ')}`;
+      }
     }
 
     const systemPrompt = buildSystemPrompt(userMedicalContext);
@@ -71,7 +87,7 @@ class ChatService {
     };
   }
 
-  async sendMessage(sessionId: string, userMessage: string): Promise<SendMessageResponse> {
+  async sendMessage(sessionId: string, userMessage: string, mediaBase64?: string, mediaType?: string): Promise<SendMessageResponse> {
     const session = await redisClient.getSession(sessionId);
     if (!session) throw new Error("SESSION_NOT_FOUND");
 
@@ -82,22 +98,26 @@ class ChatService {
     if (urgencyLevel === 1) logger.warn({ sessionId }, "Level 1 emergency detected");
     if (mentalHealthCrisis) logger.warn({ sessionId }, "Mental health crisis detected");
 
+    // Skip RAG when there's no meaningful text to embed (media-only messages)
+    const hasTextQuery = userMessage.trim().length > 5;
     let ragContext: string | undefined;
-    try {
-      const queryEmbedding = await openAIService.generateEmbedding(userMessage);
-      const ragLimit = urgencyLevel === 1 ? 5 : 4;
-      const chunks = await vectorService.searchSimilar(queryEmbedding, ragLimit);
+    if (hasTextQuery) {
+      try {
+        const queryEmbedding = await openAIService.generateEmbedding(userMessage);
+        const ragLimit = urgencyLevel === 1 ? 5 : 4;
+        const chunks = await vectorService.searchSimilar(queryEmbedding, ragLimit);
 
-      if (chunks.length > 0) {
-        ragContext = chunks
-          .map((chunk) => {
-            const truncated = chunk.content.length > 600 ? chunk.content.slice(0, 600) + "..." : chunk.content;
-            return `[${chunk.category}]\n${truncated}`;
-          })
-          .join("\n\n---\n\n");
+        if (chunks.length > 0) {
+          ragContext = chunks
+            .map((chunk) => {
+              const truncated = chunk.content.length > 600 ? chunk.content.slice(0, 600) + "..." : chunk.content;
+              return `[${chunk.category}]\n${truncated}`;
+            })
+            .join("\n\n---\n\n");
+        }
+      } catch (err) {
+        logger.warn({ err }, "RAG unavailable, responding without additional context");
       }
-    } catch (err) {
-      logger.warn({ err }, "RAG unavailable, responding without additional context");
     }
 
     let contextNote: string | undefined;
@@ -114,7 +134,9 @@ class ChatService {
       session.history,
       userMessage,
       ragContext,
-      contextNote
+      contextNote,
+      mediaBase64,
+      mediaType,
     );
 
     const timestamp = new Date();

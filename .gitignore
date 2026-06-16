@@ -1,12 +1,12 @@
 node_modules/
 dist/
 
-# Variables de entorno
+# Environment Variables
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
 
-# Claves de servicio Firebase (nunca al repo)
+# Firebase service accounts (Never commit to repo)
 *firebase-adminsdk*.json
 *service-account*.json
 firebase-service-account.json
@@ -15,6 +15,26 @@ firebase-service-account.json
 *.log
 npm-debug.log*
 
-# Build
+# Build and outputs
 dist/
 build/
+out/
+.next/
+.serverless/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS metadata files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini

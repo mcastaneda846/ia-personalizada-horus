@@ -36,7 +36,14 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "10kb" }));
+// Límite separado: rutas de media admiten hasta 15mb (imágenes/PDFs en base64)
+// El resto de rutas sigue siendo ligero
+app.use('/chat/message', express.json({ limit: '15mb' }));
+app.use('/chat/stt', express.json({ limit: '50mb' }));
+app.use('/chat/tts', express.json({ limit: '10mb' }));
+app.use('/chat/init', express.json({ limit: '10kb' }));
+app.use('/chat/end', express.json({ limit: '10kb' }));
+app.use(express.json({ limit: '10kb' }));
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
 
 app.use("/health", healthRouter);
