@@ -25,7 +25,7 @@ class ElevenLabsService {
       body: JSON.stringify({
         text,
         model_id: "eleven_turbo_v2_5",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: 1.0 },
+        voice_settings: { stability: 0.42, similarity_boost: 0.75, speed: 1.15 },
       }),
     });
 

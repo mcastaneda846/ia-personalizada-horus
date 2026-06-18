@@ -8,7 +8,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src/**/*.ts",
-    "seed": "tsx src/scripts/seed-knowledge.ts"
+    "seed": "tsx src/scripts/seed-knowledge.ts",
+    "seed:add": "tsx src/scripts/seed-additional.ts",
+    "seed:gaps": "tsx src/scripts/seed-gaps.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.0",
