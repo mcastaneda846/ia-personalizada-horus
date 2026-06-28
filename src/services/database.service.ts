@@ -1,6 +1,18 @@
+import path from "path";
 import { Pool, PoolClient } from "pg";
+import * as admin from "firebase-admin";
 import { env } from "../config/env";
+import logger from "../config/logger";
+import { redisClient } from "./redis.service";
 import { MedicalProfile, ChatLog } from "../models/types";
+
+if (!admin.apps.length) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const serviceAccount = require(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_PATH));
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+}
+
+const MEDICAL_PROFILE_TTL = 3600; // 1 hora
 
 class DatabaseService {
   private pool: Pool;
@@ -15,7 +27,7 @@ class DatabaseService {
     });
 
     this.pool.on("error", (err) => {
-      console.error("❌ PostgreSQL pool error:", err.message);
+      logger.error({ err: err.message }, "PostgreSQL pool error");
     });
   }
 
@@ -26,29 +38,32 @@ class DatabaseService {
     return DatabaseService.instance;
   }
 
-  // ───────────────────────────────
-  // PERFIL MÉDICO
-  // ───────────────────────────────
-
   async getUserMedicalProfile(userId: string): Promise<MedicalProfile | null> {
-    const client = await this.pool.connect();
+    const cacheKey = `horus:medical-profile:${userId}`;
 
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached) as MedicalProfile;
+
+    const client = await this.pool.connect();
     try {
-      const userResult = await client.query(
+      const user = await client.query(
         `SELECT id FROM users WHERE id = $1 AND account_status = 'ACTIVE' LIMIT 1`,
         [userId]
       );
+      if (user.rows.length === 0) return null;
 
-      if (userResult.rows.length === 0) return null;
+      const [personalInfo, medicalProfile, allergies, chronicConditions, medications, emergencyContacts, medicalHistory] =
+        await Promise.all([
+          this.fetchPersonalInfo(client, userId),
+          this.fetchMedicalProfile(client, userId),
+          this.fetchAllergies(client, userId),
+          this.fetchChronicConditions(client, userId),
+          this.fetchMedications(client, userId),
+          this.fetchEmergencyContacts(client, userId),
+          this.fetchMedicalHistory(client, userId),
+        ]);
 
-      const personalInfo = await this.fetchPersonalInfo(client, userId);
-      const medicalProfile = await this.fetchMedicalProfile(client, userId);
-      const allergies = await this.fetchAllergies(client, userId);
-      const chronicConditions = await this.fetchChronicConditions(client, userId);
-      const medications = await this.fetchMedications(client, userId);
-      const emergencyContacts = await this.fetchEmergencyContacts(client, userId);
-
-      return {
+      const profile: MedicalProfile = {
         userId,
         personalInfo,
         medicalProfile,
@@ -56,7 +71,12 @@ class DatabaseService {
         chronicConditions,
         currentMedications: medications,
         emergencyContacts,
+        medicalHistory,
       };
+
+      await redisClient.setex(cacheKey, MEDICAL_PROFILE_TTL, JSON.stringify(profile));
+
+      return profile;
     } finally {
       client.release();
     }
@@ -68,17 +88,12 @@ class DatabaseService {
        FROM personal_information WHERE user_id = $1 LIMIT 1`,
       [userId]
     );
-
     if (result.rows.length === 0) return null;
-
     const row = result.rows[0];
-
     return {
       firstName: row.first_name,
       lastName: row.last_name,
-      dateOfBirth: row.date_of_birth
-        ? new Date(row.date_of_birth).toISOString()
-        : null,
+      dateOfBirth: row.date_of_birth ? new Date(row.date_of_birth).toISOString() : null,
       gender: row.gender,
       bloodType: row.blood_type,
     };
@@ -90,11 +105,8 @@ class DatabaseService {
        FROM medical_profile WHERE user_id = $1 LIMIT 1`,
       [userId]
     );
-
     if (result.rows.length === 0) return null;
-
     const row = result.rows[0];
-
     return {
       heightCm: row.height_cm ? Number(row.height_cm) : null,
       weightKg: row.weight_kg ? Number(row.weight_kg) : null,
@@ -110,7 +122,6 @@ class DatabaseService {
        FROM allergies WHERE user_id = $1 ORDER BY severity DESC`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       allergenName: row.allergen_name,
       allergyType: row.allergy_type,
@@ -128,7 +139,6 @@ class DatabaseService {
        ORDER BY severity DESC NULLS LAST`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       conditionName: row.condition_name,
       severity: row.severity,
@@ -147,7 +157,6 @@ class DatabaseService {
        WHERE um.user_id = $1 AND um.is_current = true`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       name: row.name,
       dosage: row.dosage,
@@ -166,7 +175,6 @@ class DatabaseService {
        ORDER BY priority_order ASC`,
       [userId]
     );
-
     return result.rows.map((row) => ({
       fullName: row.full_name,
       relationship: row.relationship,
@@ -176,44 +184,86 @@ class DatabaseService {
     }));
   }
 
-  // ───────────────────────────────
-  // CHAT LOGS
-  // ───────────────────────────────
+  private async fetchMedicalHistory(client: PoolClient, userId: string) {
+    const result = await client.query(
+      `SELECT event_type, event_name, event_date, outcome
+       FROM medical_history
+       WHERE user_id = $1
+       ORDER BY event_date DESC NULLS LAST
+       LIMIT 10`,
+      [userId]
+    );
+    return result.rows.map((row) => ({
+      eventType: row.event_type,
+      eventName: row.event_name,
+      eventDate: row.event_date ? new Date(row.event_date).toISOString() : null,
+      outcome: row.outcome,
+    }));
+  }
+
+  async getTodayHealthReadings(userId: string): Promise<{
+    heartRate?: number; steps?: number; calories?: number;
+    activityMinutes?: number; battery?: number; timestamp?: string;
+  } | null> {
+    try {
+      const db = admin.firestore();
+      const doc = await db.collection('health_readings').doc(userId).get();
+      if (!doc.exists) return null;
+      const d = doc.data()!;
+      return {
+        heartRate:       d.heartRate       ?? undefined,
+        steps:           d.steps           ?? undefined,
+        calories:        d.calories        ?? undefined,
+        activityMinutes: d.activityMinutes ?? undefined,
+        battery:         d.battery         ?? undefined,
+        timestamp:       d.timestamp       ?? undefined,
+      };
+    } catch (err) {
+      logger.error({ err, userId }, "Failed to fetch today health readings from Firebase");
+      return null;
+    }
+  }
 
   async saveChatLog(log: ChatLog): Promise<void> {
-    try {
-      await this.pool.query(
-        `INSERT INTO chat_logs (
-           user_id, session_id, started_at, ended_at, summary,
-           main_topics, alert_level, emergency_services_recommended,
-           key_recommendations, requires_follow_up, follow_up_reason, message_count
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [
-          log.userId,
-          log.sessionId,
-          log.startedAt,
-          log.endedAt,
-          log.summary,
-          JSON.stringify(log.mainTopics ?? []),
-          log.alertLevel,
-          log.emergencyServicesRecommended,
-          JSON.stringify(log.keyRecommendations ?? []),
-          log.requiresFollowUp,
-          log.followUpReason,
-          log.messageCount,
-        ]
-      );
-    } catch (err) {
-      console.error("❌ Error guardando chat log:", err);
-      throw err;
-    }
+    const db = admin.firestore();
+    await db.collection("chat_logs").doc(log.sessionId).set({
+      user_id: log.userId,
+      session_id: log.sessionId,
+      started_at: log.startedAt,
+      ended_at: log.endedAt,
+      summary: log.summary,
+      main_topics: log.mainTopics ?? [],
+      alert_level: log.alertLevel,
+      emergency_services_recommended: log.emergencyServicesRecommended,
+      key_recommendations: log.keyRecommendations ?? [],
+      requires_follow_up: log.requiresFollowUp,
+      follow_up_reason: log.followUpReason,
+      message_count: log.messageCount,
+    });
+  }
+
+  async getChatHistory(userId: string, limit = 30): Promise<object[]> {
+    const db = admin.firestore();
+    const snap = await db
+      .collection("chat_logs")
+      .where("user_id", "==", userId)
+      .limit(limit)
+      .get();
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Record<string, unknown>));
+    // Ordenar en memoria por started_at desc (evita índice compuesto en Firestore)
+    return docs.sort((a, b) => {
+      const aTs = (a.started_at as { _seconds?: number })?._seconds ?? 0;
+      const bTs = (b.started_at as { _seconds?: number })?._seconds ?? 0;
+      return bTs - aTs;
+    });
   }
 
   async ping(): Promise<boolean> {
     try {
       await this.pool.query("SELECT 1");
       return true;
-    } catch {
+    } catch (err) {
+      logger.error({ err }, "Database ping failed");
       return false;
     }
   }

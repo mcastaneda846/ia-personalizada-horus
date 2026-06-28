@@ -1,5 +1,3 @@
-// ─── Sesión de chat ───────────────────────────────────────────────────────────
-
 export interface ChatSession {
   sessionId: string;
   userId: string;
@@ -10,12 +8,10 @@ export interface ChatSession {
 }
 
 export interface ChatMessage {
-  role: "user" | "model";
-  parts: [{ text: string }];
+  role: "user" | "assistant";
+  content: string;
   timestamp: Date;
 }
-
-// ─── Perfil médico (viene de Qdrant) ─────────────────────────────────────────
 
 export interface MedicalProfile {
   userId: string;
@@ -25,6 +21,14 @@ export interface MedicalProfile {
   chronicConditions: ChronicCondition[];
   currentMedications: Medication[];
   emergencyContacts: EmergencyContact[];
+  medicalHistory: MedicalHistoryEvent[];
+}
+
+export interface MedicalHistoryEvent {
+  eventType: string;
+  eventName: string;
+  eventDate: string | null;
+  outcome: string | null;
 }
 
 export interface PersonalInfo {
@@ -75,20 +79,12 @@ export interface EmergencyContact {
   priorityOrder: number;
 }
 
-// ─── Qdrant ───────────────────────────────────────────────────────────────────
-
-export interface QdrantPoint {
-  id: string;
-  vector: number[];
-  payload: {
-    userId: string;
-    profileText: string;
-    medicalProfile: MedicalProfile;
-    updatedAt: string;
-  };
+export interface KnowledgeChunk {
+  id?: string;
+  content: string;
+  category: string;
+  source?: string;
 }
-
-// ─── Chat log (se guarda en PostgreSQL al cerrar sesión) ──────────────────────
 
 export interface ChatLog {
   userId: string;
@@ -104,8 +100,6 @@ export interface ChatLog {
   followUpReason: string | null;
   messageCount: number;
 }
-
-// ─── Request / Response schemas ───────────────────────────────────────────────
 
 export interface InitChatRequest {
   userId: string;
@@ -145,8 +139,6 @@ export interface SyncUserResponse {
   success: boolean;
   message: string;
 }
-
-// ─── API Error ────────────────────────────────────────────────────────────────
 
 export interface ApiError {
   error: string;

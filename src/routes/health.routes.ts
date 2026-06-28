@@ -1,44 +1,38 @@
 import { Router, Request, Response } from "express";
 import { redisClient } from "../services/redis.service";
-import { qdrantService } from "../services/qdrant.service";
+import { vectorService } from "../services/vector.service";
 import { databaseService } from "../services/database.service";
+import { authMiddleware } from "../middleware/auth.middleware";
 
 const router = Router();
 
-/**
- * GET /health
- *
- * Verifica el estado de todos los servicios.
- * No requiere autenticación — útil para monitoring.
- */
-router.get("/", async (_req: Request, res: Response) => {
-  const [redis, qdrant, database] = await Promise.allSettled([
+// Público — solo confirma que el proceso está vivo, sin exponer dependencias
+router.get("/public", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok", service: "horus-ai" });
+});
+
+// Privado — estado detallado de todas las dependencias (requiere API key)
+router.get("/", authMiddleware, async (_req: Request, res: Response) => {
+  const [redis, vectorDb, database] = await Promise.allSettled([
     redisClient.ping(),
-    qdrantService.ping(),
+    vectorService.ping(),
     databaseService.ping(),
   ]);
 
-  const status = {
-    service: "horus-ai",
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    dependencies: {
-      redis: redis.status === "fulfilled" && redis.value ? "ok" : "error",
-      qdrant: qdrant.status === "fulfilled" && qdrant.value ? "ok" : "error",
-      database:
-        database.status === "fulfilled" && database.value ? "ok" : "error",
-    },
+  const dependencies = {
+    redis:     redis.status     === "fulfilled" && redis.value     ? "ok" : "error",
+    vector_db: vectorDb.status  === "fulfilled" && vectorDb.value  ? "ok" : "error",
+    database:  database.status  === "fulfilled" && database.value  ? "ok" : "error",
   };
 
-  const allHealthy = Object.values(status.dependencies).every(
-    (s) => s === "ok"
-  );
+  const allHealthy = Object.values(dependencies).every((s) => s === "ok");
 
-  if (!allHealthy) {
-    status.status = "degraded";
-  }
-
-  res.status(allHealthy ? 200 : 503).json(status);
+  res.status(allHealthy ? 200 : 503).json({
+    service: "horus-ai",
+    status: allHealthy ? "ok" : "degraded",
+    timestamp: new Date().toISOString(),
+    dependencies,
+  });
 });
 
 export { router as healthRouter };
