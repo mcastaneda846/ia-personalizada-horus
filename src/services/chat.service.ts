@@ -116,7 +116,7 @@ class ChatService {
             .join("\n\n---\n\n");
         }
       } catch (err) {
-        logger.warn({ err }, "RAG unavailable, responding without additional context");
+        logger.error({ err }, "RAG unavailable, responding without additional context");
       }
     }
 

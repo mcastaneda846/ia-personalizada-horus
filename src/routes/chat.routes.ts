@@ -1,8 +1,10 @@
 import { Router, Request, Response, NextFunction } from "express";
+import { z } from "zod";
 import logger from "../config/logger";
 import { chatService } from "../services/chat.service";
 import { elevenLabsService } from "../services/elevenlabs.service";
 import { openAIService } from "../services/openai.service";
+import { databaseService } from "../services/database.service";
 import { authMiddleware } from "../middleware/auth.middleware";
 import {
   validateBody,
@@ -73,15 +75,19 @@ router.post(
   }
 );
 
+const historyQuerySchema = z.object({ userId: z.string().uuid("userId debe ser un UUID válido") });
+
 // History — conversaciones pasadas del usuario (GET con userId en query)
 router.get(
   "/history",
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { userId } = req.query as { userId?: string };
-      if (!userId) { res.status(400).json({ error: "userId requerido" }); return; }
-      const { databaseService } = require("../services/database.service");
-      const logs = await databaseService.getChatHistory(userId);
+      const parsed = historyQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.errors[0].message, code: "INVALID_PARAMS" });
+        return;
+      }
+      const logs = await databaseService.getChatHistory(parsed.data.userId);
       res.status(200).json({ logs });
     } catch (error) {
       logger.error({ err: (error as Error).message }, "History route error");

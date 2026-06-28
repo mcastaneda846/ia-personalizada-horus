@@ -23,13 +23,15 @@ const envSchema = z.object({
   ELEVENLABS_API_KEY: z.string().optional(),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(30),
+  ALLOWED_ORIGINS: z.string().default("http://localhost:3000"),
 });
 
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  console.error("Variables de entorno inválidas:");
-  console.error(parsed.error.flatten().fieldErrors);
+  // Usar process.stderr directamente — logger aún no inicializado
+  process.stderr.write("Variables de entorno inválidas:\n");
+  process.stderr.write(JSON.stringify(parsed.error.flatten().fieldErrors, null, 2) + "\n");
   process.exit(1);
 }
 

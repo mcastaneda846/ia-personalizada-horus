@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  horus-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://horus:password123@postgres:5432/horus_db
+      - VECTOR_DATABASE_URL=postgresql://horus:password123@postgres:5432/horus_db
+      - REDIS_URL=redis://redis:6379
+      - SESSION_TTL_SECONDS=3600
+      - ALLOWED_ORIGINS=*
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX_REQUESTS=30
+      # NOTA: En producción, se deben inyectar las claves reales usando un archivo .env externo
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: always
+
+  postgres:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=horus
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=horus_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U horus -d horus_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:

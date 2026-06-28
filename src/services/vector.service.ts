@@ -15,7 +15,7 @@ class VectorService {
       max: 5,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: true },
     });
 
     this.pool.on("error", (err) => {
@@ -67,7 +67,10 @@ class VectorService {
   async upsertChunk(chunk: KnowledgeChunk, embedding: number[]): Promise<void> {
     await this.pool.query(
       `INSERT INTO medical_knowledge_chunks (content, category, source, embedding)
-       VALUES ($1, $2, $3, $4)`,
+       SELECT $1, $2, $3, $4
+       WHERE NOT EXISTS (
+         SELECT 1 FROM medical_knowledge_chunks WHERE content = $1
+       )`,
       [chunk.content, chunk.category, chunk.source ?? null, JSON.stringify(embedding)]
     );
   }
@@ -104,7 +107,8 @@ class VectorService {
     try {
       await this.pool.query("SELECT 1");
       return true;
-    } catch {
+    } catch (err) {
+      logger.error({ err }, "Vector DB ping failed");
       return false;
     }
   }

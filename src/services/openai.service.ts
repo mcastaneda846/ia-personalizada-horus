@@ -3,6 +3,16 @@ import { env } from "../config/env";
 import { ChatMessage, MedicalProfile } from "../models/types";
 import { SESSION_SUMMARY_PROMPT } from "../prompts/system.prompt";
 import logger from "../config/logger";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
+import * as napi from "@napi-rs/canvas";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.js";
+
+// Polyfill globals que pdfjs-dist necesita antes de cargarlo
+const g = globalThis as Record<string, unknown>;
+if (!g.DOMMatrix) g.DOMMatrix = napi.DOMMatrix;
+if (!g.Path2D)    g.Path2D    = napi.Path2D;
+pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
 const HISTORY_WINDOW = 12;
 
@@ -59,12 +69,15 @@ class OpenAIService {
       messages.push({ role: "system", content: contextNote });
     }
 
+    // Límite de tokens en userMessage para evitar saturar el modelo
+    const safeUserMessage = userMessage ? userMessage.slice(0, 4000) : "";
+
     if (mediaBase64 && mediaType) {
       if (mediaType.startsWith("image/")) {
         messages.push({
           role: "user",
           content: [
-            { type: "text", text: userMessage || "Analiza esta imagen médica y orientame según mi perfil." },
+            { type: "text", text: safeUserMessage || "Analiza esta imagen médica y orientame según mi perfil." },
             // detail:"low" = 85 tokens fijos (~$0.00013) vs "high" que puede superar 1500 tokens
             { type: "image_url", image_url: { url: `data:${mediaType};base64,${mediaBase64}`, detail: "low" } },
           ],
@@ -74,7 +87,7 @@ class OpenAIService {
           const pdfText = await this.extractPdfText(mediaBase64);
           if (pdfText.length > 80) {
             messages.push({ role: "system", content: `DOCUMENTO PDF ADJUNTO POR EL USUARIO:\n${pdfText}` });
-            messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+            messages.push({ role: "user", content: safeUserMessage || "Analiza este documento médico adjunto." });
           } else {
             // PDF escaneado — renderizar página 1 como imagen y usar visión (85 tokens, ~$0.00001)
             logger.info("Scanned PDF detected, rendering page 1 for vision OCR");
@@ -82,7 +95,7 @@ class OpenAIService {
             messages.push({
               role: "user",
               content: [
-                { type: "text", text: userMessage || "Analiza este documento médico escaneado." },
+                { type: "text", text: safeUserMessage || "Analiza este documento médico escaneado." },
                 { type: "image_url", image_url: { url: `data:image/jpeg;base64,${jpegBase64}`, detail: "low" } },
               ],
             });
@@ -90,7 +103,7 @@ class OpenAIService {
         } catch (err) {
           logger.warn({ err }, "PDF processing failed");
           messages.push({ role: "system", content: "El usuario adjuntó un PDF pero no fue posible procesarlo. Pídele que tome una foto del documento." });
-          messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+          messages.push({ role: "user", content: safeUserMessage || "Analiza este documento médico adjunto." });
         }
       } else if (mediaType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         try {
@@ -100,12 +113,12 @@ class OpenAIService {
           logger.warn({ err }, "DOCX extraction failed");
           messages.push({ role: "system", content: "El usuario adjuntó un Word pero no fue posible leerlo. Pídele que describa el contenido." });
         }
-        messages.push({ role: "user", content: userMessage || "Analiza este documento médico adjunto." });
+        messages.push({ role: "user", content: safeUserMessage || "Analiza este documento médico adjunto." });
       } else {
-        messages.push({ role: "user", content: userMessage });
+        messages.push({ role: "user", content: safeUserMessage });
       }
     } else {
-      messages.push({ role: "user", content: userMessage });
+      messages.push({ role: "user", content: safeUserMessage });
     }
 
     const response = await this.client.chat.completions.create({
@@ -119,25 +132,12 @@ class OpenAIService {
   }
 
   private async extractPdfText(base64: string): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
     const buffer = Buffer.from(base64, "base64");
     const data = await pdfParse(buffer);
     return data.text.trim().slice(0, 5000);
   }
 
   private async renderPdfPageAsImage(base64: string): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const napi = require("@napi-rs/canvas") as { createCanvas: (w: number, h: number) => any; DOMMatrix: any; Path2D: any };
-
-    // Polyfill globals que pdfjs-dist necesita antes de cargarlo
-    if (!globalThis.DOMMatrix) (globalThis as any).DOMMatrix = napi.DOMMatrix;
-    if (!globalThis.Path2D)   (globalThis as any).Path2D   = napi.Path2D;
-
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfjsLib = require("pdfjs-dist/legacy/build/pdf.js") as any;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-
     // Factory para que pdfjs use @napi-rs/canvas en lugar de node-canvas
     const canvasFactory = {
       create: (w: number, h: number) => {
@@ -155,15 +155,13 @@ class OpenAIService {
     const viewport  = page.getViewport({ scale: 1.5 });
     const obj       = canvasFactory.create(Math.ceil(viewport.width), Math.ceil(viewport.height));
 
-    await page.render({ canvasContext: obj.context, viewport, canvasFactory }).promise;
+    await page.render({ canvasContext: obj.context, viewport, canvasFactory } as any).promise;
 
-    const jpegBuffer: Buffer = obj.canvas.toBuffer("image/jpeg", { quality: 0.85 });
+    const jpegBuffer: Buffer = obj.canvas.toBuffer("image/jpeg");
     return jpegBuffer.toString("base64");
   }
 
   private async extractDocxText(base64: string): Promise<string> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mammoth = require("mammoth") as { extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }> };
     const buffer = Buffer.from(base64, "base64");
     const result = await mammoth.extractRawText({ buffer });
     return result.value.slice(0, 5000);
@@ -194,16 +192,19 @@ class OpenAIService {
     });
 
     try {
-      return JSON.parse(response.choices[0].message.content ?? "{}");
-    } catch {
+      const content = response.choices[0].message.content;
+      if (!content) throw new Error("Empty response from OpenAI");
+      return JSON.parse(content);
+    } catch (err) {
+      logger.warn({ err }, "Failed to parse session summary JSON, using safe fallback");
       return {
-        summary: "",
+        summary: response.choices[0].message.content?.slice(0, 300) ?? "Resumen no disponible",
         mainTopics: [],
-        alertLevel: "LOW",
+        alertLevel: "HIGH",
         emergencyServicesRecommended: false,
         keyRecommendations: [],
-        requiresFollowUp: false,
-        followUpReason: null,
+        requiresFollowUp: true,
+        followUpReason: "Resumen automático falló — revisar sesión manualmente",
       };
     }
   }

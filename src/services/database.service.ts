@@ -3,6 +3,7 @@ import { Pool, PoolClient } from "pg";
 import * as admin from "firebase-admin";
 import { env } from "../config/env";
 import logger from "../config/logger";
+import { redisClient } from "./redis.service";
 import { MedicalProfile, ChatLog } from "../models/types";
 
 if (!admin.apps.length) {
@@ -10,6 +11,8 @@ if (!admin.apps.length) {
   const serviceAccount = require(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_PATH));
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
+
+const MEDICAL_PROFILE_TTL = 3600; // 1 hora
 
 class DatabaseService {
   private pool: Pool;
@@ -36,6 +39,11 @@ class DatabaseService {
   }
 
   async getUserMedicalProfile(userId: string): Promise<MedicalProfile | null> {
+    const cacheKey = `horus:medical-profile:${userId}`;
+
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached) as MedicalProfile;
+
     const client = await this.pool.connect();
     try {
       const user = await client.query(
@@ -55,7 +63,7 @@ class DatabaseService {
           this.fetchMedicalHistory(client, userId),
         ]);
 
-      return {
+      const profile: MedicalProfile = {
         userId,
         personalInfo,
         medicalProfile,
@@ -65,6 +73,10 @@ class DatabaseService {
         emergencyContacts,
         medicalHistory,
       };
+
+      await redisClient.setex(cacheKey, MEDICAL_PROFILE_TTL, JSON.stringify(profile));
+
+      return profile;
     } finally {
       client.release();
     }
@@ -206,7 +218,8 @@ class DatabaseService {
         battery:         d.battery         ?? undefined,
         timestamp:       d.timestamp       ?? undefined,
       };
-    } catch {
+    } catch (err) {
+      logger.error({ err, userId }, "Failed to fetch today health readings from Firebase");
       return null;
     }
   }
@@ -249,7 +262,8 @@ class DatabaseService {
     try {
       await this.pool.query("SELECT 1");
       return true;
-    } catch {
+    } catch (err) {
+      logger.error({ err }, "Database ping failed");
       return false;
     }
   }

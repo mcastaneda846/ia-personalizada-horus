@@ -15,7 +15,7 @@ class RedisClient {
     this.client = new Redis(env.REDIS_URL, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
-      ...(isTLS && { tls: { rejectUnauthorized: false } }),
+      ...(isTLS && { tls: { rejectUnauthorized: true } }),
     });
 
     this.client.on("error", (err) => {
@@ -76,6 +76,18 @@ class RedisClient {
     return (await this.client.exists(this.sessionKey(sessionId))) === 1;
   }
 
+  async get(key: string): Promise<string | null> {
+    return this.client.get(key);
+  }
+
+  async setex(key: string, ttlSeconds: number, value: string): Promise<void> {
+    await this.client.setex(key, ttlSeconds, value);
+  }
+
+  async del(key: string): Promise<void> {
+    await this.client.del(key);
+  }
+
   private sessionKey(sessionId: string): string {
     return `horus:session:${sessionId}`;
   }
@@ -83,7 +95,8 @@ class RedisClient {
   async ping(): Promise<boolean> {
     try {
       return (await this.client.ping()) === "PONG";
-    } catch {
+    } catch (err) {
+      logger.warn({ err }, "Redis ping failed");
       return false;
     }
   }

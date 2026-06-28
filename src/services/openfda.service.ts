@@ -1,3 +1,5 @@
+import logger from "../config/logger";
+
 const OPENFDA_BASE = "https://api.fda.gov/drug/label.json";
 
 const RELEVANT_FIELDS = [
@@ -36,7 +38,8 @@ class OpenFDAService {
         contraindications: this.extractField(label, ["contraindications"]),
         drugInteractions: this.extractField(label, ["drug_interactions"]),
       };
-    } catch {
+    } catch (err) {
+      logger.error({ err, medicationName }, "OpenFDA API request failed");
       return null;
     }
   }

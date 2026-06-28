@@ -12,14 +12,28 @@ import { healthRouter } from "./routes/health.routes";
 import { errorHandler } from "./middleware/error.middleware";
 import { redisClient } from "./services/redis.service";
 import { vectorService } from "./services/vector.service";
+import { databaseService } from "./services/database.service";
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(helmet());
+
+const allowedOrigins = env.ALLOWED_ORIGINS.split(",").map((o) => o.trim());
 app.use(
   cors({
-    origin: env.NODE_ENV === "production" ? false : "*",
+    origin: (origin, cb) => {
+      // Permitir requests sin origin (mobile apps, curl, Postman)
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes("*") || env.NODE_ENV === "development") {
+        return cb(null, true);
+      }
+      cb(new Error(`CORS: origin ${origin} no permitido`));
+    },
     methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
 
@@ -33,13 +47,16 @@ app.use(
     },
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) =>
+      (req.headers.authorization?.split(" ")[1] ?? req.ip ?? "unknown"),
+    skip: (req) => req.path === "/health/public",
   })
 );
 
 // Límite separado: rutas de media admiten hasta 15mb (imágenes/PDFs en base64)
 // El resto de rutas sigue siendo ligero
 app.use('/chat/message', express.json({ limit: '15mb' }));
-app.use('/chat/stt', express.json({ limit: '50mb' }));
+app.use('/chat/stt', express.json({ limit: '25mb' }));
 app.use('/chat/tts', express.json({ limit: '10mb' }));
 app.use('/chat/init', express.json({ limit: '10kb' }));
 app.use('/chat/end', express.json({ limit: '10kb' }));
