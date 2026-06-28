@@ -1,67 +1,62 @@
 # Horus AI Service
 
-Servicio de IA personalizada para emergencias médicas. Agnóstico del proyecto Horus principal, se conecta a través de endpoints HTTP.
+A customized Artificial Intelligence service tailored for medical emergencies. This service is decoupled from the main Horus project and communicates via HTTP endpoints.
 
-## Stack
+## 🚀 Tech Stack
 
 - **Runtime**: Node.js + TypeScript
 - **Framework**: Express
-- **LLM + Embeddings**: Google Gemini (AI Studio) — `gemini-1.5-flash` + `text-embedding-004`
-- **Vector Store**: Qdrant
-- **Caché de sesiones**: Redis
-- **BD persistente**: PostgreSQL (la misma de Horus, acceso controlado)
+- **LLM**: OpenAI (`gpt-4o-mini` for chat, `text-embedding-3-small` for embeddings)
+- **Vector Database**: PostgreSQL + `pgvector` (e.g., Neon.tech)
+- **Session Cache**: Redis (e.g., Upstash)
+- **Persistence DB**: PostgreSQL (User Medical Profiles) & Firebase Firestore (Health Readings & Chat Logs)
+- **Text-to-Speech (TTS)**: ElevenLabs
 
-## Arquitectura de flujo
+## 🧠 Architecture Flow
 
+```mermaid
+sequenceDiagram
+    participant User
+    participant Horus AI
+    participant Postgres (pgvector)
+    participant Redis
+    participant Firebase
+    participant OpenAI
+
+    User->>Horus AI: POST /chat/init { userId }
+    Horus AI->>Postgres (pgvector): Fetch medical profile & relevant protocols
+    Horus AI->>Firebase: Fetch today's health readings
+    Horus AI->>Redis: Initialize session with context
+    Horus AI-->>User: { sessionId, message, disclaimer }
+
+    User->>Horus AI: POST /chat/message { sessionId, message }
+    Horus AI->>Redis: Retrieve session (no DB hits)
+    Horus AI->>OpenAI: Send message with built context
+    OpenAI-->>Horus AI: AI Response
+    Horus AI->>Redis: Save conversation turn
+    Horus AI-->>User: { response }
+
+    User->>Horus AI: POST /chat/end { sessionId }
+    Horus AI->>OpenAI: Generate session summary
+    Horus AI->>Firebase: Save chat log & summary
+    Horus AI->>Redis: Delete session
 ```
-[Usuario hace clic en "Iniciar chat"]
-    → POST /chat/init { userId }
-    → Busca perfil en Qdrant (UNA SOLA VEZ)
-    → Construye system prompt personalizado
-    → Crea sesión en Redis
-    → Retorna { sessionId, message, disclaimer }
 
-[Usuario envía mensaje]
-    → POST /chat/message { sessionId, message }
-    → Recupera sesión de Redis (sin tocar Qdrant)
-    → Envía a Gemini con contexto ya armado
-    → Guarda intercambio en Redis
-    → Retorna { response }
+## 📡 Endpoints
 
-[Usuario cierra el chat]
-    → POST /chat/end { sessionId }
-    → Gemini genera resumen de la sesión
-    → Guarda log en PostgreSQL (Horus DB)
-    → Elimina sesión de Redis
-
-[Horus detecta cambio en datos del usuario]
-    → POST /sync/user { userId }
-    → Lee perfil completo de Horus DB
-    → Vectoriza con Gemini Embeddings
-    → Upsert en Qdrant
-```
-
-## Endpoints
-
-| Método | Ruta           | Descripción                                      |
+| Method | Route          | Description                                      |
 |--------|----------------|--------------------------------------------------|
-| POST   | /chat/init     | Inicia sesión, carga contexto médico desde Qdrant |
-| POST   | /chat/message  | Envía mensaje al agente                          |
-| POST   | /chat/end      | Finaliza sesión, genera log, limpia Redis         |
-| POST   | /sync/user     | Sincroniza perfil médico de Horus → Qdrant        |
-| GET    | /health        | Estado de todos los servicios                    |
+| `POST` | `/chat/init`   | Initializes session, loads medical context       |
+| `POST` | `/chat/message`| Sends a message to the AI agent                  |
+| `POST` | `/chat/end`    | Ends session, generates log, clears Redis        |
+| `POST` | `/sync/user`   | Synchronizes medical profile changes to Redis    |
+| `GET`  | `/health`      | Returns status of all dependencies               |
 
-Todos los endpoints (excepto `/health`) requieren:
-```
+**Note**: All endpoints (except `/health`) require authentication via header:
+```http
 Authorization: Bearer <API_SECRET_KEY>
 ```
 
-## Setup
-
-### 1. Variables de entorno
-
-```bash
-cp .env.example .env
 # Editar .env con tus valores reales
 ```
 
