@@ -7,8 +7,17 @@ import { redisClient } from "./redis.service";
 import { MedicalProfile, ChatLog } from "../models/types";
 
 if (!admin.apps.length) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const serviceAccount = require(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_PATH));
+  let serviceAccount: object;
+  if (env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    // PaaS (Railway, Render, etc.) — JSON en variable de entorno
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  } else if (env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    // Local — archivo en disco
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    serviceAccount = require(path.resolve(env.FIREBASE_SERVICE_ACCOUNT_PATH));
+  } else {
+    throw new Error("Se requiere FIREBASE_SERVICE_ACCOUNT_JSON o FIREBASE_SERVICE_ACCOUNT_PATH");
+  }
   admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 }
 

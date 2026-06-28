@@ -14,7 +14,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL requerida"),
   VECTOR_DATABASE_URL: z.string().min(1, "VECTOR_DATABASE_URL requerida"),
 
-  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default("./firebase-service-account.json"),
+  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
 
   PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
