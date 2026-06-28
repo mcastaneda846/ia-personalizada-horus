@@ -57,133 +57,46 @@ sequenceDiagram
 Authorization: Bearer <API_SECRET_KEY>
 ```
 
-# Editar .env con tus valores reales
-```
+## 🔐 Security & Performance
 
-### 2. Infraestructura local (Qdrant + Redis)
+- **Trust Proxy**: Configured for accurate rate-limiting behind load balancers.
+- **Strict TLS/SSL**: Ensures encrypted connections to Postgres and Redis (`rejectUnauthorized: true`).
+- **Dynamic CORS**: Configurable allowed origins via `.env`.
+- **Token Limits**: Truncates extremely long user inputs to prevent OpenAI context exhaustion.
+- **Lazy Loading**: Heavy dependencies (`pdf-parse`, `canvas`) are optimized for performance.
+- **Idempotency**: Vector seed scripts use `WHERE NOT EXISTS` to prevent duplicate insertions.
 
+## 🐳 Deployment (Docker & PaaS)
+
+This project is fully dockerized and ready for PaaS platforms like Railway or Render, as well as traditional VPS deployments.
+
+### 1. Environment Variables
+Copy `.env.example` to `.env` and configure your credentials.
+For Firebase, you can authenticate in two ways:
+- **Local / VPS**: Set `FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json`.
+- **PaaS (Railway, Render)**: Inject the JSON directly via `FIREBASE_SERVICE_ACCOUNT_JSON`.
+
+### 2. Run with Docker Compose
 ```bash
-docker-compose up qdrant redis -d
+docker-compose up -d --build
 ```
+This will automatically spin up the Node.js backend, a Redis instance, and a PostgreSQL instance (with pgvector installed).
 
-### 3. Migración en DB de Horus
-
-```bash
-psql -d horus_db -f migrations/001_create_chat_logs.sql
-```
-
-### 4. Instalar dependencias y correr
-
+### 3. Run Locally (Development)
 ```bash
 npm install
 npm run dev
 ```
 
-## Integración con Horus (lo que debe hacer el equipo)
-
-### Al iniciar chat (frontend → backend Horus → este servicio)
-
-```typescript
-// En el backend de Horus, cuando el usuario hace clic en "Iniciar chat"
-const response = await fetch("http://horus-ai:3001/chat/init", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${process.env.HORUS_AI_SECRET_KEY}`,
-  },
-  body: JSON.stringify({ userId: currentUser.id }),
-});
-const { sessionId, message, disclaimer } = await response.json();
-// Devolver sessionId al frontend para usarlo en mensajes posteriores
-```
-
-### Al enviar mensajes
-
-```typescript
-const response = await fetch("http://horus-ai:3001/chat/message", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${process.env.HORUS_AI_SECRET_KEY}`,
-  },
-  body: JSON.stringify({ sessionId, message: userMessage }),
-});
-const { response: aiResponse } = await response.json();
-```
-
-### Cuando hay cambios en datos médicos del usuario
-
-```typescript
-// Llamar desde el Prisma middleware de Horus cuando cambien datos del usuario
-await fetch("http://horus-ai:3001/sync/user", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${process.env.HORUS_AI_SECRET_KEY}`,
-  },
-  body: JSON.stringify({ userId }),
-});
-```
-
-### Prisma middleware sugerido para Horus
-
-```typescript
-// En el proyecto Horus — prisma.ts
-prisma.$use(async (params, next) => {
-  const result = await next(params);
-
-  const medicalModels = [
-    "PersonalInformation", "MedicalProfile", "Allergy",
-    "ChronicCondition", "UserMedication", "EmergencyContact"
-  ];
-
-  const mutationActions = ["create", "update", "delete", "upsert"];
-
-  if (
-    medicalModels.includes(params.model ?? "") &&
-    mutationActions.includes(params.action)
-  ) {
-    const userId = params.args?.data?.userId ?? params.args?.where?.userId;
-    if (userId) {
-      // Fire and forget — no bloquear la operación principal
-      fetch(`${process.env.HORUS_AI_URL}/sync/user`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.HORUS_AI_SECRET_KEY}`,
-        },
-        body: JSON.stringify({ userId }),
-      }).catch(console.error);
-    }
-  }
-
-  return result;
-});
-```
-
-## Estructura del proyecto
+## 🛠 Project Structure
 
 ```
 src/
-├── config/
-│   └── env.ts                  # Variables de entorno con validación Zod
-├── middleware/
-│   ├── auth.middleware.ts       # Validación API key
-│   ├── error.middleware.ts      # Manejo centralizado de errores
-│   └── validation.middleware.ts # Validación de body con Zod
-├── models/
-│   └── types.ts                 # Interfaces TypeScript
-├── prompts/
-│   └── system.prompt.ts         # System prompt base + primeros auxilios
-├── routes/
-│   ├── chat.routes.ts           # /chat/*
-│   ├── sync.routes.ts           # /sync/*
-│   └── health.routes.ts         # /health
-├── services/
-│   ├── chat.service.ts          # Orquestación del flujo completo
-│   ├── gemini.service.ts        # LLM + embeddings
-│   ├── qdrant.service.ts        # Vector store
-│   ├── redis.service.ts         # Caché de sesiones
-│   └── database.service.ts      # PostgreSQL (Horus DB)
-└── index.ts                     # Entry point, Express setup
+├── config/       # Environment variables & Logger (Pino)
+├── controllers/  # Route handlers
+├── middleware/   # API Key Auth, Rate Limiter, Error handling
+├── models/       # TypeScript interfaces
+├── routes/       # Express routers
+├── scripts/      # Vector DB seeding scripts
+└── services/     # OpenAI, Vector DB, Redis, Firebase, and OpenFDA logic
 ```
